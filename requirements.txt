@@ -1,0 +1,2 @@
+# We rely on pure Python standard library for core runtime
+# Optional fast parsing tools can be added later
