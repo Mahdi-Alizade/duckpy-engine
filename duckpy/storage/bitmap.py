@@ -1,7 +1,6 @@
 """
 Compact Null BitMap representation for Vector storage.
 """
-import bytearray
 from typing import List
 
 
@@ -43,7 +42,6 @@ class BitMap:
         total = 0
         for b in self._bytes:
             total += bin(b).count("1")
-        # Exclude out-of-bound bits from the last byte if any
         excess_bits = (len(self._bytes) * 8) - self._size
         if excess_bits > 0:
             last_byte = self._bytes[-1]
