@@ -1,9 +1,20 @@
 """
 DuckPy Engine Benchmark suite comparing query times on 100,000 synthetic rows.
 """
+import os
+import sys
 import time
 import random
-from duckpy import DuckPyContext, DuckType, ComparisonOp, AggregateExpr, AggregateFunction
+
+# Ensure root project directory is in python path
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+from duckpy.context import DuckPyContext
+from duckpy.types.dtypes import DuckType
+from duckpy.execution.filter import ComparisonOp
+from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
 
 
 def run_benchmark():
