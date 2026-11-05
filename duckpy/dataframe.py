@@ -7,11 +7,13 @@ from duckpy.storage.chunk import DataChunk
 from duckpy.storage.schema import Schema
 from duckpy.execution.filter import ComparisonOp
 from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
+from duckpy.execution.expressions import Expression
 from duckpy.optimizer.logical_plan import (
     LogicalNode,
     LogicalFilter,
     LogicalProjection,
     LogicalAggregate,
+    LogicalWithColumn,
 )
 from duckpy.optimizer.optimizer import Optimizer
 
@@ -35,6 +37,18 @@ class DataFrame:
 
     def select(self, *columns: str) -> "DataFrame":
         new_plan = LogicalProjection(self._logical_plan, list(columns))
+        return DataFrame(new_plan, self._catalog)
+
+    def with_column(
+        self,
+        column_name: str,
+        expression: Expression,
+        dtype: DuckType = DuckType.FLOAT64
+    ) -> "DataFrame":
+        """
+        Appends or evaluates a new computed column via vectorized expressions.
+        """
+        new_plan = LogicalWithColumn(self._logical_plan, column_name, expression, dtype)
         return DataFrame(new_plan, self._catalog)
 
     def aggregate(
