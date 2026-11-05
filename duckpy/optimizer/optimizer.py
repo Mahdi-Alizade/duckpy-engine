@@ -11,6 +11,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalProjection,
     LogicalAggregate,
     LogicalWithColumn,
+    LogicalOrderBy,
 )
 from duckpy.execution.operator import PhysicalOperator
 from duckpy.execution.scan import PhysicalScan
@@ -18,6 +19,7 @@ from duckpy.execution.filter import VectorizedFilter
 from duckpy.execution.projection import PhysicalProjection
 from duckpy.execution.aggregate import PhysicalHashAggregate
 from duckpy.execution.expression_eval import PhysicalExpressionEval
+from duckpy.execution.order_by import PhysicalOrderBy
 
 
 class Optimizer:
@@ -37,7 +39,7 @@ class Optimizer:
             )
             return LogicalProjection(new_filter, root.select_columns)
 
-        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalAggregate, LogicalWithColumn)):
+        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalAggregate, LogicalWithColumn, LogicalOrderBy)):
             optimized_child = Optimizer.pushdown_predicates(root.children[0])
             if isinstance(root, LogicalProjection):
                 return LogicalProjection(optimized_child, root.select_columns)
@@ -60,6 +62,11 @@ class Optimizer:
                     root.column_name,
                     root.expression,
                     root.dtype
+                )
+            elif isinstance(root, LogicalOrderBy):
+                return LogicalOrderBy(
+                    optimized_child,
+                    root.order_by_expressions
                 )
 
         return root
@@ -105,5 +112,9 @@ class Optimizer:
                 root.column_name,
                 root.dtype
             )
+
+        elif isinstance(root, LogicalOrderBy):
+            child_phys = Optimizer.to_physical(root.child, tables_catalog)
+            return PhysicalOrderBy(child_phys, root.order_by_expressions)
 
         raise TypeError(f"Cannot compile unsupported logical node: {type(root)}")
