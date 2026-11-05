@@ -5,12 +5,13 @@ from duckpy.storage.chunk import DataChunk
 from duckpy.dataframe import DataFrame
 from duckpy.optimizer.logical_plan import LogicalScan
 from duckpy.sql.parser import SimpleSQLParser
+from duckpy.persistence.storage_engine import DiskStorageEngine
 
 
 class DuckPyContext:
     """
     DuckPy Database Engine Session Context managing registered tables,
-    schemas, and direct SQL execution.
+    schemas, direct SQL execution, and binary disk persistence.
     """
     def __init__(self):
         self._catalog: Dict[str, List[DataChunk]] = {}
@@ -62,3 +63,22 @@ class DuckPyContext:
         parser = SimpleSQLParser(self._schemas)
         logical_plan = parser.parse(query)
         return DataFrame(logical_plan, self._catalog)
+
+    def save_table_to_disk(self, table_name: str, file_path: str) -> None:
+        """
+        Persists a table from in-memory catalog to disk in DuckPy binary format.
+        """
+        if table_name not in self._catalog:
+            raise KeyError(f"Table '{table_name}' does not exist.")
+        
+        schema = self._schemas[table_name]
+        chunks = self._catalog[table_name]
+        DiskStorageEngine.save_table(file_path, schema, chunks)
+
+    def load_table_from_disk(self, table_name: str, file_path: str) -> DataFrame:
+        """
+        Loads a persisted binary table file into memory and registers it.
+        """
+        schema, chunks = DiskStorageEngine.load_table(file_path)
+        self.register_table(table_name, schema, chunks)
+        return self.table(table_name)
