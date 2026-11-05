@@ -51,9 +51,10 @@ htmlcov/
 secrets/
 credentials.json
 
-# Benchmarks & Data dumps
+# Benchmarks, Dumps and Temporary Data
 data/
 benchmarks/results/
 *.parquet
 *.csv
 *.bin
+*.log
