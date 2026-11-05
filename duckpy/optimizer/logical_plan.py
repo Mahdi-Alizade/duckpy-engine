@@ -6,6 +6,7 @@ from typing import Any, List, Optional
 from duckpy.storage.schema import Schema, ColumnDefinition
 from duckpy.execution.filter import ComparisonOp
 from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
+from duckpy.execution.expressions import Expression
 from duckpy.types.dtypes import DuckType
 
 
@@ -116,3 +117,32 @@ class LogicalAggregate(LogicalNode):
 
     def __repr__(self) -> str:
         return f"LogicalAggregate(groups={self.group_by_columns}, aggs={[a.alias for a in self.aggregates]})"
+
+
+class LogicalWithColumn(LogicalNode):
+    def __init__(
+        self,
+        child: LogicalNode,
+        column_name: str,
+        expression: Expression,
+        dtype: DuckType = DuckType.FLOAT64
+    ):
+        self.child = child
+        self.column_name = column_name
+        self.expression = expression
+        self.dtype = dtype
+
+        cols = list(self.child.schema.columns)
+        cols.append(ColumnDefinition(column_name, dtype))
+        self._schema = Schema(cols)
+
+    @property
+    def schema(self) -> Schema:
+        return self._schema
+
+    @property
+    def children(self) -> List[LogicalNode]:
+        return [self.child]
+
+    def __repr__(self) -> str:
+        return f"LogicalWithColumn(col='{self.column_name}', dtype={self.dtype.name})"
