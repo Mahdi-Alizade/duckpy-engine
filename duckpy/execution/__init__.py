@@ -4,6 +4,8 @@ from duckpy.execution.filter import VectorizedFilter, ComparisonOp
 from duckpy.execution.projection import PhysicalProjection
 from duckpy.execution.aggregate import PhysicalHashAggregate, AggregateExpr, AggregateFunction
 from duckpy.execution.parallel_scan import ParallelScan
+from duckpy.execution.expression_eval import PhysicalExpressionEval
+from duckpy.execution.order_by import PhysicalOrderBy, OrderByExpr, OrderDirection
 from duckpy.execution.expressions import (
     Expression,
     ColumnRefExpr,
@@ -22,6 +24,10 @@ __all__ = [
     "AggregateExpr",
     "AggregateFunction",
     "ParallelScan",
+    "PhysicalExpressionEval",
+    "PhysicalOrderBy",
+    "OrderByExpr",
+    "OrderDirection",
     "Expression",
     "ColumnRefExpr",
     "LiteralExpr",
