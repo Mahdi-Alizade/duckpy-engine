@@ -7,6 +7,7 @@ from duckpy.storage.schema import Schema, ColumnDefinition
 from duckpy.execution.filter import ComparisonOp
 from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
 from duckpy.execution.expressions import Expression
+from duckpy.execution.order_by import OrderByExpr
 from duckpy.types.dtypes import DuckType
 
 
@@ -146,3 +147,21 @@ class LogicalWithColumn(LogicalNode):
 
     def __repr__(self) -> str:
         return f"LogicalWithColumn(col='{self.column_name}', dtype={self.dtype.name})"
+
+
+class LogicalOrderBy(LogicalNode):
+    def __init__(self, child: LogicalNode, order_by_expressions: List[OrderByExpr]):
+        self.child = child
+        self.order_by_expressions = list(order_by_expressions)
+
+    @property
+    def schema(self) -> Schema:
+        return self.child.schema
+
+    @property
+    def children(self) -> List[LogicalNode]:
+        return [self.child]
+
+    def __repr__(self) -> str:
+        items = [f"{expr.column_name} {expr.direction.name}" for expr in self.order_by_expressions]
+        return f"LogicalOrderBy({', '.join(items)})"
