@@ -1,19 +1,21 @@
 """
 DataFrame API providing lazy evaluation and fluent query construction.
 """
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Union
 from duckpy.types.dtypes import DuckType
 from duckpy.storage.chunk import DataChunk
 from duckpy.storage.schema import Schema
 from duckpy.execution.filter import ComparisonOp
 from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
 from duckpy.execution.expressions import Expression
+from duckpy.execution.order_by import OrderByExpr, OrderDirection
 from duckpy.optimizer.logical_plan import (
     LogicalNode,
     LogicalFilter,
     LogicalProjection,
     LogicalAggregate,
     LogicalWithColumn,
+    LogicalOrderBy,
 )
 from duckpy.optimizer.optimizer import Optimizer
 
@@ -45,10 +47,17 @@ class DataFrame:
         expression: Expression,
         dtype: DuckType = DuckType.FLOAT64
     ) -> "DataFrame":
-        """
-        Appends or evaluates a new computed column via vectorized expressions.
-        """
         new_plan = LogicalWithColumn(self._logical_plan, column_name, expression, dtype)
+        return DataFrame(new_plan, self._catalog)
+
+    def order_by(
+        self,
+        column_name: str,
+        ascending: bool = True
+    ) -> "DataFrame":
+        direction = OrderDirection.ASCENDING if ascending else OrderDirection.DESCENDING
+        expr = OrderByExpr(column_name, direction)
+        new_plan = LogicalOrderBy(self._logical_plan, [expr])
         return DataFrame(new_plan, self._catalog)
 
     def aggregate(
@@ -60,9 +69,6 @@ class DataFrame:
         return DataFrame(new_plan, self._catalog)
 
     def execute(self) -> List[DataChunk]:
-        """
-        Runs RBO optimization, compiles to Physical Pipeline, and executes.
-        """
         optimized_plan = Optimizer.pushdown_predicates(self._logical_plan)
         physical_pipeline = Optimizer.to_physical(optimized_plan, self._catalog)
         physical_pipeline.init()
@@ -76,9 +82,6 @@ class DataFrame:
         return chunks
 
     def to_dict(self) -> List[Dict[str, Any]]:
-        """
-        Executes and returns results as list of dictionary records.
-        """
         chunks = self.execute()
         records: List[Dict[str, Any]] = []
         for chunk in chunks:
@@ -88,9 +91,6 @@ class DataFrame:
         return records
 
     def show(self) -> None:
-        """
-        Pretty prints the query results to terminal.
-        """
         records = self.to_dict()
         if not records:
             print("Empty result.")
