@@ -1,15 +1,17 @@
-"""
-DuckPy Database Engine Session Context.
-"""
 from typing import Any, Dict, List, Optional
 from duckpy.types.dtypes import DuckType
 from duckpy.storage.schema import Schema, ColumnDefinition
 from duckpy.storage.chunk import DataChunk
 from duckpy.dataframe import DataFrame
 from duckpy.optimizer.logical_plan import LogicalScan
+from duckpy.sql.parser import SimpleSQLParser
 
 
 class DuckPyContext:
+    """
+    DuckPy Database Engine Session Context managing registered tables,
+    schemas, and direct SQL execution.
+    """
     def __init__(self):
         self._catalog: Dict[str, List[DataChunk]] = {}
         self._schemas: Dict[str, Schema] = {}
@@ -52,3 +54,11 @@ class DuckPyContext:
         schema = self._schemas[name]
         scan_plan = LogicalScan(name, schema)
         return DataFrame(scan_plan, self._catalog)
+
+    def sql(self, query: str) -> DataFrame:
+        """
+        Parses and executes an SQL query, returning a lazy DataFrame.
+        """
+        parser = SimpleSQLParser(self._schemas)
+        logical_plan = parser.parse(query)
+        return DataFrame(logical_plan, self._catalog)
