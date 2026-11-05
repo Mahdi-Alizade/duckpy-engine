@@ -10,12 +10,14 @@ from duckpy.optimizer.logical_plan import (
     LogicalFilter,
     LogicalProjection,
     LogicalAggregate,
+    LogicalWithColumn,
 )
 from duckpy.execution.operator import PhysicalOperator
 from duckpy.execution.scan import PhysicalScan
 from duckpy.execution.filter import VectorizedFilter
 from duckpy.execution.projection import PhysicalProjection
 from duckpy.execution.aggregate import PhysicalHashAggregate
+from duckpy.execution.expression_eval import PhysicalExpressionEval
 
 
 class Optimizer:
@@ -26,7 +28,6 @@ class Optimizer:
         """
         if isinstance(root, LogicalProjection) and isinstance(root.child, LogicalFilter):
             filter_node = root.child
-            # Push filter under projection if target column is within projection
             new_child = Optimizer.pushdown_predicates(filter_node.child)
             new_filter = LogicalFilter(
                 new_child,
@@ -36,7 +37,7 @@ class Optimizer:
             )
             return LogicalProjection(new_filter, root.select_columns)
 
-        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalAggregate)):
+        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalAggregate, LogicalWithColumn)):
             optimized_child = Optimizer.pushdown_predicates(root.children[0])
             if isinstance(root, LogicalProjection):
                 return LogicalProjection(optimized_child, root.select_columns)
@@ -52,6 +53,13 @@ class Optimizer:
                     optimized_child,
                     root.group_by_columns,
                     root.aggregates
+                )
+            elif isinstance(root, LogicalWithColumn):
+                return LogicalWithColumn(
+                    optimized_child,
+                    root.column_name,
+                    root.expression,
+                    root.dtype
                 )
 
         return root
@@ -87,6 +95,15 @@ class Optimizer:
                 child_phys,
                 root.group_by_columns,
                 root.aggregates
+            )
+
+        elif isinstance(root, LogicalWithColumn):
+            child_phys = Optimizer.to_physical(root.child, tables_catalog)
+            return PhysicalExpressionEval(
+                child_phys,
+                root.expression,
+                root.column_name,
+                root.dtype
             )
 
         raise TypeError(f"Cannot compile unsupported logical node: {type(root)}")
