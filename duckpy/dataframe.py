@@ -16,6 +16,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalAggregate,
     LogicalWithColumn,
     LogicalOrderBy,
+    LogicalLimit,
 )
 from duckpy.optimizer.optimizer import Optimizer
 
@@ -58,6 +59,10 @@ class DataFrame:
         direction = OrderDirection.ASCENDING if ascending else OrderDirection.DESCENDING
         expr = OrderByExpr(column_name, direction)
         new_plan = LogicalOrderBy(self._logical_plan, [expr])
+        return DataFrame(new_plan, self._catalog)
+
+    def limit(self, count: int) -> "DataFrame":
+        new_plan = LogicalLimit(self._logical_plan, count)
         return DataFrame(new_plan, self._catalog)
 
     def aggregate(
