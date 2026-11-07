@@ -6,6 +6,7 @@ from duckpy.execution.aggregate import PhysicalHashAggregate, AggregateExpr, Agg
 from duckpy.execution.parallel_scan import ParallelScan
 from duckpy.execution.expression_eval import PhysicalExpressionEval
 from duckpy.execution.order_by import PhysicalOrderBy, OrderByExpr, OrderDirection
+from duckpy.execution.limit import PhysicalLimit
 from duckpy.execution.expressions import (
     Expression,
     ColumnRefExpr,
@@ -28,6 +29,7 @@ __all__ = [
     "PhysicalOrderBy",
     "OrderByExpr",
     "OrderDirection",
+    "PhysicalLimit",
     "Expression",
     "ColumnRefExpr",
     "LiteralExpr",
