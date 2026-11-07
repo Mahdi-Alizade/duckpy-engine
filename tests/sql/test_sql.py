@@ -44,3 +44,28 @@ def test_sql_group_by_aggregation():
     res = {r["dept"]: (r["avg_sal"], r["emp_count"]) for r in rows}
     assert res["Tech"] == (6000.0, 2)
     assert res["Sales"] == (4000.0, 1)
+
+
+def test_sql_order_by_and_limit():
+    ctx = DuckPyContext()
+    data = [
+        [1, "Player_A", 50.0],
+        [2, "Player_B", 90.0],
+        [3, "Player_C", 75.0],
+        [4, "Player_D", 100.0],
+    ]
+    cols = [
+        ("id", DuckType.INT64),
+        ("name", DuckType.STRING),
+        ("score", DuckType.FLOAT64),
+    ]
+    ctx.create_table_from_rows("leaderboard", cols, data, chunk_size=2)
+
+    # Top 2 players with highest scores
+    query = "SELECT name, score FROM leaderboard ORDER BY score DESC LIMIT 2;"
+    df = ctx.sql(query)
+    top_players = df.to_dict()
+
+    assert len(top_players) == 2
+    assert top_players[0] == {"name": "Player_D", "score": 100.0}
+    assert top_players[1] == {"name": "Player_B", "score": 90.0}
