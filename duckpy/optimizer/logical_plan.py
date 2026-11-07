@@ -8,6 +8,7 @@ from duckpy.execution.filter import ComparisonOp
 from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
 from duckpy.execution.expressions import Expression
 from duckpy.execution.order_by import OrderByExpr
+from duckpy.execution.logical_filter import BooleanLogicOp, FilterCondition
 from duckpy.types.dtypes import DuckType
 
 
@@ -63,6 +64,34 @@ class LogicalFilter(LogicalNode):
 
     def __repr__(self) -> str:
         return f"LogicalFilter({self.column_name} {self.op.name} {self.target_value})"
+
+
+class LogicalCompoundFilter(LogicalNode):
+    def __init__(
+        self,
+        child: LogicalNode,
+        left_condition: FilterCondition,
+        logic_op: BooleanLogicOp,
+        right_condition: FilterCondition
+    ):
+        self.child = child
+        self.left_condition = left_condition
+        self.logic_op = logic_op
+        self.right_condition = right_condition
+
+    @property
+    def schema(self) -> Schema:
+        return self.child.schema
+
+    @property
+    def children(self) -> List[LogicalNode]:
+        return [self.child]
+
+    def __repr__(self) -> str:
+        return (
+            f"LogicalCompoundFilter({self.left_condition.column_name} {self.left_condition.op.name} "
+            f"{self.logic_op.name} {self.right_condition.column_name} {self.right_condition.op.name})"
+        )
 
 
 class LogicalProjection(LogicalNode):
