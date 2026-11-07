@@ -3,28 +3,31 @@ from typing import Dict, List, Optional
 from duckpy.storage.schema import Schema
 from duckpy.execution.filter import ComparisonOp
 from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
+from duckpy.execution.order_by import OrderByExpr, OrderDirection
 from duckpy.optimizer.logical_plan import (
     LogicalNode,
     LogicalScan,
     LogicalFilter,
     LogicalProjection,
     LogicalAggregate,
+    LogicalOrderBy,
+    LogicalLimit,
 )
 
 
 class SimpleSQLParser:
     """
     Lightweight SQL Parser that parses standard analytical queries
-    and compiles them into a DuckPy Logical Plan tree.
+    supporting SELECT, WHERE, GROUP BY, ORDER BY, and LIMIT clauses.
     """
     def __init__(self, catalog_schemas: Dict[str, Schema]):
         self._schemas = dict(catalog_schemas)
 
     def _parse_comparison_op(self, raw_op: str) -> ComparisonOp:
         cleaned_op = raw_op.strip()
-        if cleaned_op == "=" or cleaned_op == "==":
+        if cleaned_op in ("=", "=="):
             return ComparisonOp.EQUAL
-        elif cleaned_op == "!=" or cleaned_op == "<>":
+        elif cleaned_op in ("!=", "<>"):
             return ComparisonOp.NOT_EQUAL
         elif cleaned_op == ">":
             return ComparisonOp.GREATER_THAN
@@ -40,15 +43,12 @@ class SimpleSQLParser:
 
     def _cast_literal(self, literal_str: str):
         val = literal_str.strip()
-        # Handle string literals
         if (val.startswith("'") and val.endswith("'")) or (val.startswith('"') and val.endswith('"')):
             return val[1:-1]
-        # Handle boolean
         if val.lower() == "true":
             return True
         elif val.lower() == "false":
             return False
-        # Handle numbers
         try:
             if "." in val:
                 return float(val)
@@ -59,11 +59,13 @@ class SimpleSQLParser:
     def parse(self, sql_query: str) -> LogicalNode:
         cleaned_sql = sql_query.strip().rstrip(";")
         
-        # Regex to capture SELECT, FROM, optional WHERE, optional GROUP BY
+        # Regex to capture SELECT, FROM, WHERE, GROUP BY, ORDER BY, LIMIT
         pattern = re.compile(
             r"SELECT\s+(?P<select>.+?)\s+FROM\s+(?P<from>[a-zA-Z0-9_]+)"
             r"(?:\s+WHERE\s+(?P<where>.+?))?"
-            r"(?:\s+GROUP\s+BY\s+(?P<group_by>.+?))?$",
+            r"(?:\s+GROUP\s+BY\s+(?P<group_by>.+?))?"
+            r"(?:\s+ORDER\s+BY\s+(?P<order_by>.+?))?"
+            r"(?:\s+LIMIT\s+(?P<limit>\d+))?$",
             re.IGNORECASE
         )
 
@@ -82,9 +84,7 @@ class SimpleSQLParser:
         # 1. Process WHERE clause
         where_clause = match.group("where")
         if where_clause:
-            where_pattern = re.compile(
-                r"([a-zA-Z0-9_]+)\s*(=|!=|<>|>=|<=|>|<)\s*(.+)"
-            )
+            where_pattern = re.compile(r"([a-zA-Z0-9_]+)\s*(=|!=|<>|>=|<=|>|<)\s*(.+)")
             where_match = where_pattern.match(where_clause.strip())
             if not where_match:
                 raise ValueError(f"Invalid WHERE predicate format: '{where_clause}'")
@@ -103,13 +103,11 @@ class SimpleSQLParser:
                 target_value=target_value
             )
 
-        # 2. Process SELECT & GROUP BY expressions
+        # 2. Process SELECT & GROUP BY
         select_clause = match.group("select").strip()
         group_by_clause = match.group("group_by")
-
         raw_select_items = [item.strip() for item in select_clause.split(",")]
 
-        # Check if aggregates exist in select items
         aggregates: List[AggregateExpr] = []
         project_columns: List[str] = []
         has_aggregation = False
@@ -131,12 +129,7 @@ class SimpleSQLParser:
                 project_columns.append(item)
 
         if has_aggregation:
-            group_by_cols: List[str] = []
-            if group_by_clause:
-                group_by_cols = [c.strip() for c in group_by_clause.split(",")]
-            else:
-                group_by_cols = project_columns
-
+            group_by_cols = [c.strip() for c in group_by_clause.split(",")] if group_by_clause else project_columns
             current_node = LogicalAggregate(
                 child=current_node,
                 group_by_columns=group_by_cols,
@@ -148,5 +141,22 @@ class SimpleSQLParser:
                     child=current_node,
                     select_columns=project_columns
                 )
+
+        # 3. Process ORDER BY clause
+        order_by_clause = match.group("order_by")
+        if order_by_clause:
+            order_specs = []
+            for spec in order_by_clause.split(","):
+                parts = spec.strip().split()
+                col = parts[0]
+                direction = OrderDirection.DESCENDING if (len(parts) > 1 and parts[1].upper() == "DESC") else OrderDirection.ASCENDING
+                order_specs.append(OrderByExpr(col, direction))
+            current_node = LogicalOrderBy(current_node, order_specs)
+
+        # 4. Process LIMIT clause
+        limit_clause = match.group("limit")
+        if limit_clause:
+            limit_val = int(limit_clause.strip())
+            current_node = LogicalLimit(current_node, limit_val)
 
         return current_node
