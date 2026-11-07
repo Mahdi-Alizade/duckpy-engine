@@ -4,10 +4,12 @@ from duckpy.storage.schema import Schema
 from duckpy.execution.filter import ComparisonOp
 from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
 from duckpy.execution.order_by import OrderByExpr, OrderDirection
+from duckpy.execution.logical_filter import BooleanLogicOp, FilterCondition
 from duckpy.optimizer.logical_plan import (
     LogicalNode,
     LogicalScan,
     LogicalFilter,
+    LogicalCompoundFilter,
     LogicalProjection,
     LogicalAggregate,
     LogicalOrderBy,
@@ -18,7 +20,7 @@ from duckpy.optimizer.logical_plan import (
 class SimpleSQLParser:
     """
     Lightweight SQL Parser that parses standard analytical queries
-    supporting SELECT, WHERE, GROUP BY, ORDER BY, and LIMIT clauses.
+    supporting compound WHERE predicates (AND/OR), SELECT, GROUP BY, ORDER BY, and LIMIT.
     """
     def __init__(self, catalog_schemas: Dict[str, Schema]):
         self._schemas = dict(catalog_schemas)
@@ -56,6 +58,20 @@ class SimpleSQLParser:
         except ValueError:
             return val
 
+    def _parse_single_condition(self, condition_str: str) -> FilterCondition:
+        pattern = re.compile(r"([a-zA-Z0-9_]+)\s*(=|!=|<>|>=|<=|>|<)\s*(.+)")
+        match = pattern.match(condition_str.strip())
+        if not match:
+            raise ValueError(f"Invalid predicate format: '{condition_str}'")
+
+        col_name = match.group(1).strip()
+        raw_op = match.group(2).strip()
+        raw_val = match.group(3).strip()
+
+        op = self._parse_comparison_op(raw_op)
+        val = self._cast_literal(raw_val)
+        return FilterCondition(col_name, op, val)
+
     def parse(self, sql_query: str) -> LogicalNode:
         cleaned_sql = sql_query.strip().rstrip(";")
         
@@ -81,27 +97,40 @@ class SimpleSQLParser:
         schema = self._schemas[table_name]
         current_node: LogicalNode = LogicalScan(table_name, schema)
 
-        # 1. Process WHERE clause
+        # 1. Process WHERE clause (support AND / OR compound logic)
         where_clause = match.group("where")
         if where_clause:
-            where_pattern = re.compile(r"([a-zA-Z0-9_]+)\s*(=|!=|<>|>=|<=|>|<)\s*(.+)")
-            where_match = where_pattern.match(where_clause.strip())
-            if not where_match:
-                raise ValueError(f"Invalid WHERE predicate format: '{where_clause}'")
+            where_raw = where_clause.strip()
+            # Check for AND / OR delimiters
+            and_parts = re.split(r"\s+AND\s+", where_raw, flags=re.IGNORECASE)
+            or_parts = re.split(r"\s+OR\s+", where_raw, flags=re.IGNORECASE)
 
-            filter_col = where_match.group(1).strip()
-            raw_operator = where_match.group(2).strip()
-            raw_val = where_match.group(3).strip()
-
-            op = self._parse_comparison_op(raw_operator)
-            target_value = self._cast_literal(raw_val)
-
-            current_node = LogicalFilter(
-                child=current_node,
-                column_name=filter_col,
-                op=op,
-                target_value=target_value
-            )
+            if len(and_parts) == 2:
+                left_cond = self._parse_single_condition(and_parts[0])
+                right_cond = self._parse_single_condition(and_parts[1])
+                current_node = LogicalCompoundFilter(
+                    child=current_node,
+                    left_condition=left_cond,
+                    logic_op=BooleanLogicOp.AND,
+                    right_condition=right_cond
+                )
+            elif len(or_parts) == 2:
+                left_cond = self._parse_single_condition(or_parts[0])
+                right_cond = self._parse_single_condition(or_parts[1])
+                current_node = LogicalCompoundFilter(
+                    child=current_node,
+                    left_condition=left_cond,
+                    logic_op=BooleanLogicOp.OR,
+                    right_condition=right_cond
+                )
+            else:
+                single_cond = self._parse_single_condition(where_raw)
+                current_node = LogicalFilter(
+                    child=current_node,
+                    column_name=single_cond.column_name,
+                    op=single_cond.op,
+                    target_value=single_cond.target_value
+                )
 
         # 2. Process SELECT & GROUP BY
         select_clause = match.group("select").strip()
