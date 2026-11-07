@@ -165,3 +165,20 @@ class LogicalOrderBy(LogicalNode):
     def __repr__(self) -> str:
         items = [f"{expr.column_name} {expr.direction.name}" for expr in self.order_by_expressions]
         return f"LogicalOrderBy({', '.join(items)})"
+
+
+class LogicalLimit(LogicalNode):
+    def __init__(self, child: LogicalNode, limit_count: int):
+        self.child = child
+        self.limit_count = limit_count
+
+    @property
+    def schema(self) -> Schema:
+        return self.child.schema
+
+    @property
+    def children(self) -> List[LogicalNode]:
+        return [self.child]
+
+    def __repr__(self) -> str:
+        return f"LogicalLimit({self.limit_count})"
