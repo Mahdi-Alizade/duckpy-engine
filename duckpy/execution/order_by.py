@@ -1,5 +1,6 @@
 from enum import Enum, auto
-from typing import List, Optional
+from functools import cmp_to_key
+from typing import Any, List, Optional
 from duckpy.execution.operator import PhysicalOperator
 from duckpy.storage.chunk import DataChunk
 from duckpy.storage.schema import Schema
@@ -19,7 +20,7 @@ class OrderByExpr:
 class PhysicalOrderBy(PhysicalOperator):
     """
     Physical operator that buffers all incoming DataChunks and outputs
-    sorted DataChunks according to specified column ordering rules.
+    sorted DataChunks according to specified column ordering rules with NULLS LAST.
     """
     def __init__(self, child: PhysicalOperator, order_by_expressions: List[OrderByExpr]):
         self._child = child
@@ -39,46 +40,56 @@ class PhysicalOrderBy(PhysicalOperator):
         self._current_chunk_idx = 0
         self._has_sorted = False
 
+    def _compare_rows(self, row_a: List[Any], row_b: List[Any], order_specs: List[tuple[int, bool]]) -> int:
+        for col_idx, is_descending in order_specs:
+            val_a = row_a[col_idx]
+            val_b = row_b[col_idx]
+
+            # Nulls Last handling
+            if val_a is None and val_b is None:
+                continue
+            if val_a is None:
+                return 1
+            if val_b is None:
+                return -1
+
+            if val_a == val_b:
+                continue
+
+            if val_a < val_b:
+                return 1 if is_descending else -1
+            else:
+                return -1 if is_descending else 1
+
+        return 0
+
     def _collect_and_sort(self) -> None:
-        all_rows = []
+        buffered_rows = []
         while True:
             chunk = self._child.execute_chunk()
             if chunk is None:
                 break
             for row in chunk.to_rows():
-                all_rows.append(row)
+                buffered_rows.append(row)
 
-        if len(all_rows) == 0:
+        if len(buffered_rows) == 0:
             self._has_sorted = True
             return
 
-        # Prepare sort keys based on column indices
-        col_indices = []
+        order_specs: List[tuple[int, bool]] = []
         for expr in self._order_by_expressions:
-            idx = self._schema.get_column_index(expr.column_name)
-            is_reverse = (expr.direction == OrderDirection.DESCENDING)
-            col_indices.append((idx, is_reverse))
+            col_index = self._schema.get_column_index(expr.column_name)
+            is_desc = (expr.direction == OrderDirection.DESCENDING)
+            order_specs.append((col_index, is_desc))
 
-        # Sort rows with support for None values (Nulls Last)
-        def sort_key_helper(row):
-            key_elements = []
-            for idx, is_reverse in col_indices:
-                val = row[idx]
-                is_null = (val is None)
-                key_elements.append((is_null, val))
-            return key_elements
+        def comparator(a, b):
+            return self._compare_rows(a, b, order_specs)
 
-        # Multi-key sorting
-        for idx, is_reverse in reversed(col_indices):
-            all_rows.sort(
-                key=lambda r: (r[idx] is None, r[idx] if r[idx] is not None else 0),
-                reverse=is_reverse
-            )
+        buffered_rows.sort(key=cmp_to_key(comparator))
 
-        # Repackage into chunks
         capacity = 2048
         current_chunk = DataChunk(self._schema, capacity=capacity)
-        for row in all_rows:
+        for row in buffered_rows:
             if current_chunk.card >= capacity:
                 self._sorted_chunks.append(current_chunk)
                 current_chunk = DataChunk(self._schema, capacity=capacity)
