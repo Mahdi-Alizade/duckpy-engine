@@ -7,6 +7,11 @@ from duckpy.execution.parallel_scan import ParallelScan
 from duckpy.execution.expression_eval import PhysicalExpressionEval
 from duckpy.execution.order_by import PhysicalOrderBy, OrderByExpr, OrderDirection
 from duckpy.execution.limit import PhysicalLimit
+from duckpy.execution.logical_filter import (
+    VectorizedLogicalFilter,
+    BooleanLogicOp,
+    FilterCondition,
+)
 from duckpy.execution.expressions import (
     Expression,
     ColumnRefExpr,
@@ -30,6 +35,9 @@ __all__ = [
     "OrderByExpr",
     "OrderDirection",
     "PhysicalLimit",
+    "VectorizedLogicalFilter",
+    "BooleanLogicOp",
+    "FilterCondition",
     "Expression",
     "ColumnRefExpr",
     "LiteralExpr",
