@@ -1,5 +1,5 @@
 """
-Rule-Based Optimizer (RBO) implementing Predicate Pushdown, Ordering and Limit compilation.
+Rule-Based Optimizer (RBO) implementing Predicate Pushdown and Physical Pipeline compilation.
 """
 from typing import Dict, List
 from duckpy.storage.chunk import DataChunk
@@ -8,6 +8,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalNode,
     LogicalScan,
     LogicalFilter,
+    LogicalCompoundFilter,
     LogicalProjection,
     LogicalAggregate,
     LogicalWithColumn,
@@ -17,6 +18,7 @@ from duckpy.optimizer.logical_plan import (
 from duckpy.execution.operator import PhysicalOperator
 from duckpy.execution.scan import PhysicalScan
 from duckpy.execution.filter import VectorizedFilter
+from duckpy.execution.logical_filter import VectorizedLogicalFilter
 from duckpy.execution.projection import PhysicalProjection
 from duckpy.execution.aggregate import PhysicalHashAggregate
 from duckpy.execution.expression_eval import PhysicalExpressionEval
@@ -28,7 +30,7 @@ class Optimizer:
     @staticmethod
     def pushdown_predicates(root: LogicalNode) -> LogicalNode:
         """
-        Pushes LogicalFilter nodes as deep down the logical tree as possible.
+        Pushes single and compound filter nodes down the logical tree.
         """
         if isinstance(root, LogicalProjection) and isinstance(root.child, LogicalFilter):
             filter_node = root.child
@@ -41,7 +43,7 @@ class Optimizer:
             )
             return LogicalProjection(new_filter, root.select_columns)
 
-        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalAggregate, LogicalWithColumn, LogicalOrderBy, LogicalLimit)):
+        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalCompoundFilter, LogicalAggregate, LogicalWithColumn, LogicalOrderBy, LogicalLimit)):
             optimized_child = Optimizer.pushdown_predicates(root.children[0])
             if isinstance(root, LogicalProjection):
                 return LogicalProjection(optimized_child, root.select_columns)
@@ -51,6 +53,13 @@ class Optimizer:
                     root.column_name,
                     root.op,
                     root.target_value
+                )
+            elif isinstance(root, LogicalCompoundFilter):
+                return LogicalCompoundFilter(
+                    optimized_child,
+                    root.left_condition,
+                    root.logic_op,
+                    root.right_condition
                 )
             elif isinstance(root, LogicalAggregate):
                 return LogicalAggregate(
@@ -97,6 +106,15 @@ class Optimizer:
                 root.column_name,
                 root.op,
                 root.target_value
+            )
+
+        elif isinstance(root, LogicalCompoundFilter):
+            child_phys = Optimizer.to_physical(root.child, tables_catalog)
+            return VectorizedLogicalFilter(
+                child_phys,
+                root.left_condition,
+                root.logic_op,
+                root.right_condition
             )
 
         elif isinstance(root, LogicalProjection):
