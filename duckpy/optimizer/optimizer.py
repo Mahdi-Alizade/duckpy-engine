@@ -1,5 +1,5 @@
 """
-Rule-Based Optimizer (RBO) implementing Predicate Pushdown and Projection Pruning.
+Rule-Based Optimizer (RBO) implementing Predicate Pushdown, Ordering and Limit compilation.
 """
 from typing import Dict, List
 from duckpy.storage.chunk import DataChunk
@@ -12,6 +12,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalAggregate,
     LogicalWithColumn,
     LogicalOrderBy,
+    LogicalLimit,
 )
 from duckpy.execution.operator import PhysicalOperator
 from duckpy.execution.scan import PhysicalScan
@@ -20,6 +21,7 @@ from duckpy.execution.projection import PhysicalProjection
 from duckpy.execution.aggregate import PhysicalHashAggregate
 from duckpy.execution.expression_eval import PhysicalExpressionEval
 from duckpy.execution.order_by import PhysicalOrderBy
+from duckpy.execution.limit import PhysicalLimit
 
 
 class Optimizer:
@@ -39,7 +41,7 @@ class Optimizer:
             )
             return LogicalProjection(new_filter, root.select_columns)
 
-        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalAggregate, LogicalWithColumn, LogicalOrderBy)):
+        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalAggregate, LogicalWithColumn, LogicalOrderBy, LogicalLimit)):
             optimized_child = Optimizer.pushdown_predicates(root.children[0])
             if isinstance(root, LogicalProjection):
                 return LogicalProjection(optimized_child, root.select_columns)
@@ -67,6 +69,11 @@ class Optimizer:
                 return LogicalOrderBy(
                     optimized_child,
                     root.order_by_expressions
+                )
+            elif isinstance(root, LogicalLimit):
+                return LogicalLimit(
+                    optimized_child,
+                    root.limit_count
                 )
 
         return root
@@ -116,5 +123,9 @@ class Optimizer:
         elif isinstance(root, LogicalOrderBy):
             child_phys = Optimizer.to_physical(root.child, tables_catalog)
             return PhysicalOrderBy(child_phys, root.order_by_expressions)
+
+        elif isinstance(root, LogicalLimit):
+            child_phys = Optimizer.to_physical(root.child, tables_catalog)
+            return PhysicalLimit(child_phys, root.limit_count)
 
         raise TypeError(f"Cannot compile unsupported logical node: {type(root)}")
