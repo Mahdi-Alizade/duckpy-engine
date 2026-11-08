@@ -9,6 +9,7 @@ from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
 from duckpy.execution.expressions import Expression
 from duckpy.execution.order_by import OrderByExpr
 from duckpy.execution.logical_filter import BooleanLogicOp, FilterCondition
+from duckpy.execution.window import WindowSpec
 from duckpy.types.dtypes import DuckType
 
 
@@ -236,3 +237,25 @@ class LogicalLimit(LogicalNode):
 
     def __repr__(self) -> str:
         return f"LogicalLimit({self.limit_count})"
+
+
+class LogicalWindow(LogicalNode):
+    def __init__(self, child: LogicalNode, window_spec: WindowSpec):
+        self.child = child
+        self.window_spec = window_spec
+
+        existing_cols = list(child.schema.columns)
+        window_col = ColumnDefinition(window_spec.alias, DuckType.INT64)
+        existing_cols.append(window_col)
+        self._schema = Schema(existing_cols)
+
+    @property
+    def schema(self) -> Schema:
+        return self._schema
+
+    @property
+    def children(self) -> List[LogicalNode]:
+        return [self.child]
+
+    def __repr__(self) -> str:
+        return f"LogicalWindow({self.window_spec.func_type.name} AS {self.window_spec.alias})"
