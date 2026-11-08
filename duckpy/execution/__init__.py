@@ -12,6 +12,7 @@ from duckpy.execution.logical_filter import (
     BooleanLogicOp,
     FilterCondition,
 )
+from duckpy.execution.having import PhysicalHaving
 from duckpy.execution.expressions import (
     Expression,
     ColumnRefExpr,
@@ -38,6 +39,7 @@ __all__ = [
     "VectorizedLogicalFilter",
     "BooleanLogicOp",
     "FilterCondition",
+    "PhysicalHaving",
     "Expression",
     "ColumnRefExpr",
     "LiteralExpr",
