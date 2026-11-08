@@ -12,6 +12,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalCompoundFilter,
     LogicalProjection,
     LogicalAggregate,
+    LogicalHaving,
     LogicalOrderBy,
     LogicalLimit,
 )
@@ -20,7 +21,7 @@ from duckpy.optimizer.logical_plan import (
 class SimpleSQLParser:
     """
     Lightweight SQL Parser that parses standard analytical queries
-    supporting compound WHERE predicates (AND/OR), SELECT, GROUP BY, ORDER BY, and LIMIT.
+    supporting compound WHERE predicates (AND/OR), SELECT, GROUP BY, HAVING, ORDER BY, and LIMIT.
     """
     def __init__(self, catalog_schemas: Dict[str, Schema]):
         self._schemas = dict(catalog_schemas)
@@ -59,7 +60,7 @@ class SimpleSQLParser:
             return val
 
     def _parse_single_condition(self, condition_str: str) -> FilterCondition:
-        pattern = re.compile(r"([a-zA-Z0-9_]+)\s*(=|!=|<>|>=|<=|>|<)\s*(.+)")
+        pattern = re.compile(r"([a-zA-Z0-9_\(\)]+)\s*(=|!=|<>|>=|<=|>|<)\s*(.+)")
         match = pattern.match(condition_str.strip())
         if not match:
             raise ValueError(f"Invalid predicate format: '{condition_str}'")
@@ -75,11 +76,12 @@ class SimpleSQLParser:
     def parse(self, sql_query: str) -> LogicalNode:
         cleaned_sql = sql_query.strip().rstrip(";")
         
-        # Regex to capture SELECT, FROM, WHERE, GROUP BY, ORDER BY, LIMIT
+        # Regex to capture SELECT, FROM, WHERE, GROUP BY, HAVING, ORDER BY, LIMIT
         pattern = re.compile(
             r"SELECT\s+(?P<select>.+?)\s+FROM\s+(?P<from>[a-zA-Z0-9_]+)"
             r"(?:\s+WHERE\s+(?P<where>.+?))?"
             r"(?:\s+GROUP\s+BY\s+(?P<group_by>.+?))?"
+            r"(?:\s+HAVING\s+(?P<having>.+?))?"
             r"(?:\s+ORDER\s+BY\s+(?P<order_by>.+?))?"
             r"(?:\s+LIMIT\s+(?P<limit>\d+))?$",
             re.IGNORECASE
@@ -97,11 +99,10 @@ class SimpleSQLParser:
         schema = self._schemas[table_name]
         current_node: LogicalNode = LogicalScan(table_name, schema)
 
-        # 1. Process WHERE clause (support AND / OR compound logic)
+        # 1. Process WHERE clause
         where_clause = match.group("where")
         if where_clause:
             where_raw = where_clause.strip()
-            # Check for AND / OR delimiters
             and_parts = re.split(r"\s+AND\s+", where_raw, flags=re.IGNORECASE)
             or_parts = re.split(r"\s+OR\s+", where_raw, flags=re.IGNORECASE)
 
@@ -164,6 +165,17 @@ class SimpleSQLParser:
                 group_by_columns=group_by_cols,
                 aggregates=aggregates
             )
+
+            # 3. Process HAVING clause
+            having_clause = match.group("having")
+            if having_clause:
+                cond = self._parse_single_condition(having_clause.strip())
+                current_node = LogicalHaving(
+                    child=current_node,
+                    target_column=cond.column_name,
+                    op=cond.op,
+                    threshold_value=cond.target_value
+                )
         else:
             if select_clause != "*":
                 current_node = LogicalProjection(
@@ -171,7 +183,7 @@ class SimpleSQLParser:
                     select_columns=project_columns
                 )
 
-        # 3. Process ORDER BY clause
+        # 4. Process ORDER BY clause
         order_by_clause = match.group("order_by")
         if order_by_clause:
             order_specs = []
@@ -182,7 +194,7 @@ class SimpleSQLParser:
                 order_specs.append(OrderByExpr(col, direction))
             current_node = LogicalOrderBy(current_node, order_specs)
 
-        # 4. Process LIMIT clause
+        # 5. Process LIMIT clause
         limit_clause = match.group("limit")
         if limit_clause:
             limit_val = int(limit_clause.strip())
