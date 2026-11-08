@@ -14,6 +14,7 @@ from duckpy.execution.logical_filter import (
 )
 from duckpy.execution.having import PhysicalHaving
 from duckpy.execution.window import PhysicalWindow, WindowSpec, WindowFunctionType
+from duckpy.execution.hash_join import PhysicalHashJoin, JoinType
 from duckpy.execution.expressions import (
     Expression,
     ColumnRefExpr,
@@ -44,6 +45,8 @@ __all__ = [
     "PhysicalWindow",
     "WindowSpec",
     "WindowFunctionType",
+    "PhysicalHashJoin",
+    "JoinType",
     "Expression",
     "ColumnRefExpr",
     "LiteralExpr",
