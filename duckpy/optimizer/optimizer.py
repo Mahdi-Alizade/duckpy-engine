@@ -11,6 +11,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalCompoundFilter,
     LogicalProjection,
     LogicalAggregate,
+    LogicalHaving,
     LogicalWithColumn,
     LogicalOrderBy,
     LogicalLimit,
@@ -21,6 +22,7 @@ from duckpy.execution.filter import VectorizedFilter
 from duckpy.execution.logical_filter import VectorizedLogicalFilter
 from duckpy.execution.projection import PhysicalProjection
 from duckpy.execution.aggregate import PhysicalHashAggregate
+from duckpy.execution.having import PhysicalHaving
 from duckpy.execution.expression_eval import PhysicalExpressionEval
 from duckpy.execution.order_by import PhysicalOrderBy
 from duckpy.execution.limit import PhysicalLimit
@@ -43,7 +45,7 @@ class Optimizer:
             )
             return LogicalProjection(new_filter, root.select_columns)
 
-        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalCompoundFilter, LogicalAggregate, LogicalWithColumn, LogicalOrderBy, LogicalLimit)):
+        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalCompoundFilter, LogicalAggregate, LogicalHaving, LogicalWithColumn, LogicalOrderBy, LogicalLimit)):
             optimized_child = Optimizer.pushdown_predicates(root.children[0])
             if isinstance(root, LogicalProjection):
                 return LogicalProjection(optimized_child, root.select_columns)
@@ -66,6 +68,13 @@ class Optimizer:
                     optimized_child,
                     root.group_by_columns,
                     root.aggregates
+                )
+            elif isinstance(root, LogicalHaving):
+                return LogicalHaving(
+                    optimized_child,
+                    root.target_column,
+                    root.op,
+                    root.threshold_value
                 )
             elif isinstance(root, LogicalWithColumn):
                 return LogicalWithColumn(
@@ -127,6 +136,15 @@ class Optimizer:
                 child_phys,
                 root.group_by_columns,
                 root.aggregates
+            )
+
+        elif isinstance(root, LogicalHaving):
+            child_phys = Optimizer.to_physical(root.child, tables_catalog)
+            return PhysicalHaving(
+                child_phys,
+                root.target_column,
+                root.op,
+                root.threshold_value
             )
 
         elif isinstance(root, LogicalWithColumn):
