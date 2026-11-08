@@ -86,16 +86,40 @@ def test_sql_compound_where_and_or():
     ]
     ctx.create_table_from_rows("company", cols, data, chunk_size=2)
 
-    # 1. Test AND condition
     sql_and = "SELECT name, salary FROM company WHERE dept = 'Tech' AND salary > 100000.0;"
     res_and = ctx.sql(sql_and).to_dict()
     assert len(res_and) == 1
     assert res_and[0] == {"name": "Alice", "salary": 120000.0}
 
-    # 2. Test OR condition
     sql_or = "SELECT name, dept FROM company WHERE dept = 'HR' OR salary > 115000.0;"
     res_or = ctx.sql(sql_or).to_dict()
     assert len(res_or) == 2
     names = [r["name"] for r in res_or]
     assert "Alice" in names
     assert "Charlie" in names
+
+
+def test_sql_having_filter():
+    ctx = DuckPyContext()
+    data = [
+        ["Tech", 100000.0],
+        ["Tech", 120000.0],
+        ["Tech", 140000.0],
+        ["HR", 50000.0],
+        ["Sales", 60000.0],
+        ["Sales", 80000.0],
+    ]
+    cols = [
+        ("dept", DuckType.STRING),
+        ("salary", DuckType.FLOAT64),
+    ]
+    ctx.create_table_from_rows("org", cols, data, chunk_size=2)
+
+    # Filter out departments with average salary <= 80000
+    query = "SELECT dept, AVG(salary) AS avg_sal FROM org GROUP BY dept HAVING avg_sal > 80000.0;"
+    df = ctx.sql(query)
+    records = df.to_dict()
+
+    assert len(records) == 1
+    assert records[0]["dept"] == "Tech"
+    assert records[0]["avg_sal"] == 120000.0
