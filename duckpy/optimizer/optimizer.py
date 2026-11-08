@@ -15,6 +15,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalWithColumn,
     LogicalOrderBy,
     LogicalLimit,
+    LogicalWindow,
 )
 from duckpy.execution.operator import PhysicalOperator
 from duckpy.execution.scan import PhysicalScan
@@ -23,6 +24,7 @@ from duckpy.execution.logical_filter import VectorizedLogicalFilter
 from duckpy.execution.projection import PhysicalProjection
 from duckpy.execution.aggregate import PhysicalHashAggregate
 from duckpy.execution.having import PhysicalHaving
+from duckpy.execution.window import PhysicalWindow
 from duckpy.execution.expression_eval import PhysicalExpressionEval
 from duckpy.execution.order_by import PhysicalOrderBy
 from duckpy.execution.limit import PhysicalLimit
@@ -45,7 +47,7 @@ class Optimizer:
             )
             return LogicalProjection(new_filter, root.select_columns)
 
-        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalCompoundFilter, LogicalAggregate, LogicalHaving, LogicalWithColumn, LogicalOrderBy, LogicalLimit)):
+        if isinstance(root, (LogicalProjection, LogicalFilter, LogicalCompoundFilter, LogicalAggregate, LogicalHaving, LogicalWithColumn, LogicalOrderBy, LogicalLimit, LogicalWindow)):
             optimized_child = Optimizer.pushdown_predicates(root.children[0])
             if isinstance(root, LogicalProjection):
                 return LogicalProjection(optimized_child, root.select_columns)
@@ -92,6 +94,11 @@ class Optimizer:
                 return LogicalLimit(
                     optimized_child,
                     root.limit_count
+                )
+            elif isinstance(root, LogicalWindow):
+                return LogicalWindow(
+                    optimized_child,
+                    root.window_spec
                 )
 
         return root
@@ -146,6 +153,10 @@ class Optimizer:
                 root.op,
                 root.threshold_value
             )
+
+        elif isinstance(root, LogicalWindow):
+            child_phys = Optimizer.to_physical(root.child, tables_catalog)
+            return PhysicalWindow(child_phys, root.window_spec)
 
         elif isinstance(root, LogicalWithColumn):
             child_phys = Optimizer.to_physical(root.child, tables_catalog)
