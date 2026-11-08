@@ -149,6 +149,31 @@ class LogicalAggregate(LogicalNode):
         return f"LogicalAggregate(groups={self.group_by_columns}, aggs={[a.alias for a in self.aggregates]})"
 
 
+class LogicalHaving(LogicalNode):
+    def __init__(
+        self,
+        child: LogicalNode,
+        target_column: str,
+        op: ComparisonOp,
+        threshold_value: Any
+    ):
+        self.child = child
+        self.target_column = target_column
+        self.op = op
+        self.threshold_value = threshold_value
+
+    @property
+    def schema(self) -> Schema:
+        return self.child.schema
+
+    @property
+    def children(self) -> List[LogicalNode]:
+        return [self.child]
+
+    def __repr__(self) -> str:
+        return f"LogicalHaving({self.target_column} {self.op.name} {self.threshold_value})"
+
+
 class LogicalWithColumn(LogicalNode):
     def __init__(
         self,
