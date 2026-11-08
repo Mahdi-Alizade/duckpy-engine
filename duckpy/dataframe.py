@@ -9,6 +9,7 @@ from duckpy.execution.filter import ComparisonOp
 from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
 from duckpy.execution.expressions import Expression
 from duckpy.execution.order_by import OrderByExpr, OrderDirection
+from duckpy.execution.window import WindowSpec, WindowFunctionType
 from duckpy.optimizer.logical_plan import (
     LogicalNode,
     LogicalFilter,
@@ -17,6 +18,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalWithColumn,
     LogicalOrderBy,
     LogicalLimit,
+    LogicalWindow,
 )
 from duckpy.optimizer.optimizer import Optimizer
 
@@ -63,6 +65,20 @@ class DataFrame:
 
     def limit(self, count: int) -> "DataFrame":
         new_plan = LogicalLimit(self._logical_plan, count)
+        return DataFrame(new_plan, self._catalog)
+
+    def window(
+        self,
+        func_type: WindowFunctionType,
+        partition_by: Sequence[str],
+        order_by: Sequence[str],
+        alias: str
+    ) -> "DataFrame":
+        """
+        Computes analytical window function (ROW_NUMBER / RANK) over specified partitions.
+        """
+        spec = WindowSpec(func_type, list(partition_by), list(order_by), alias)
+        new_plan = LogicalWindow(self._logical_plan, spec)
         return DataFrame(new_plan, self._catalog)
 
     def aggregate(
