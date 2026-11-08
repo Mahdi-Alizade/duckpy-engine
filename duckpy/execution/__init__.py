@@ -13,6 +13,7 @@ from duckpy.execution.logical_filter import (
     FilterCondition,
 )
 from duckpy.execution.having import PhysicalHaving
+from duckpy.execution.window import PhysicalWindow, WindowSpec, WindowFunctionType
 from duckpy.execution.expressions import (
     Expression,
     ColumnRefExpr,
@@ -40,6 +41,9 @@ __all__ = [
     "BooleanLogicOp",
     "FilterCondition",
     "PhysicalHaving",
+    "PhysicalWindow",
+    "WindowSpec",
+    "WindowFunctionType",
     "Expression",
     "ColumnRefExpr",
     "LiteralExpr",
