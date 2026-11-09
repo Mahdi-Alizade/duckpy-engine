@@ -17,6 +17,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalLimit,
     LogicalWindow,
     LogicalJoin,
+    LogicalUnion,
 )
 from duckpy.execution.operator import PhysicalOperator
 from duckpy.execution.scan import PhysicalScan
@@ -27,6 +28,7 @@ from duckpy.execution.aggregate import PhysicalHashAggregate
 from duckpy.execution.having import PhysicalHaving
 from duckpy.execution.window import PhysicalWindow
 from duckpy.execution.hash_join import PhysicalHashJoin
+from duckpy.execution.union import PhysicalUnion
 from duckpy.execution.expression_eval import PhysicalExpressionEval
 from duckpy.execution.order_by import PhysicalOrderBy
 from duckpy.execution.limit import PhysicalLimit
@@ -58,6 +60,15 @@ class Optimizer:
                 root.left_on,
                 root.right_on,
                 root.join_type
+            )
+
+        if isinstance(root, LogicalUnion):
+            optimized_left = Optimizer.pushdown_predicates(root.left)
+            optimized_right = Optimizer.pushdown_predicates(root.right)
+            return LogicalUnion(
+                optimized_left,
+                optimized_right,
+                root.distinct
             )
 
         if isinstance(root, (LogicalProjection, LogicalFilter, LogicalCompoundFilter, LogicalAggregate, LogicalHaving, LogicalWithColumn, LogicalOrderBy, LogicalLimit, LogicalWindow)):
@@ -180,6 +191,15 @@ class Optimizer:
                 left_on=root.left_on,
                 right_on=root.right_on,
                 join_type=root.join_type
+            )
+
+        elif isinstance(root, LogicalUnion):
+            left_phys = Optimizer.to_physical(root.left, tables_catalog)
+            right_phys = Optimizer.to_physical(root.right, tables_catalog)
+            return PhysicalUnion(
+                left_child=left_phys,
+                right_child=right_phys,
+                distinct=root.distinct
             )
 
         elif isinstance(root, LogicalWithColumn):
