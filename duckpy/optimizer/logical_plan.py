@@ -277,7 +277,6 @@ class LogicalJoin(LogicalNode):
         self.right_on = right_on
         self.join_type = join_type
 
-        # Build combined schema
         merged_cols: List[ColumnDefinition] = []
         left_col_names = set()
 
@@ -303,3 +302,30 @@ class LogicalJoin(LogicalNode):
 
     def __repr__(self) -> str:
         return f"LogicalJoin({self.join_type.name} on left.{self.left_on} = right.{self.right_on})"
+
+
+class LogicalUnion(LogicalNode):
+    def __init__(
+        self,
+        left: LogicalNode,
+        right: LogicalNode,
+        distinct: bool = False
+    ):
+        if left.schema.column_count != right.schema.column_count:
+            raise ValueError("LogicalUnion branches must have matching column counts.")
+        self.left = left
+        self.right = right
+        self.distinct = distinct
+        self._schema = left.schema
+
+    @property
+    def schema(self) -> Schema:
+        return self._schema
+
+    @property
+    def children(self) -> List[LogicalNode]:
+        return [self.left, self.right]
+
+    def __repr__(self) -> str:
+        union_kind = "UNION DISTINCT" if self.distinct else "UNION ALL"
+        return f"LogicalUnion({union_kind})"
