@@ -16,6 +16,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalOrderBy,
     LogicalLimit,
     LogicalWindow,
+    LogicalJoin,
 )
 from duckpy.execution.operator import PhysicalOperator
 from duckpy.execution.scan import PhysicalScan
@@ -25,6 +26,7 @@ from duckpy.execution.projection import PhysicalProjection
 from duckpy.execution.aggregate import PhysicalHashAggregate
 from duckpy.execution.having import PhysicalHaving
 from duckpy.execution.window import PhysicalWindow
+from duckpy.execution.hash_join import PhysicalHashJoin
 from duckpy.execution.expression_eval import PhysicalExpressionEval
 from duckpy.execution.order_by import PhysicalOrderBy
 from duckpy.execution.limit import PhysicalLimit
@@ -46,6 +48,17 @@ class Optimizer:
                 filter_node.target_value
             )
             return LogicalProjection(new_filter, root.select_columns)
+
+        if isinstance(root, LogicalJoin):
+            optimized_left = Optimizer.pushdown_predicates(root.left)
+            optimized_right = Optimizer.pushdown_predicates(root.right)
+            return LogicalJoin(
+                optimized_left,
+                optimized_right,
+                root.left_on,
+                root.right_on,
+                root.join_type
+            )
 
         if isinstance(root, (LogicalProjection, LogicalFilter, LogicalCompoundFilter, LogicalAggregate, LogicalHaving, LogicalWithColumn, LogicalOrderBy, LogicalLimit, LogicalWindow)):
             optimized_child = Optimizer.pushdown_predicates(root.children[0])
@@ -157,6 +170,17 @@ class Optimizer:
         elif isinstance(root, LogicalWindow):
             child_phys = Optimizer.to_physical(root.child, tables_catalog)
             return PhysicalWindow(child_phys, root.window_spec)
+
+        elif isinstance(root, LogicalJoin):
+            left_phys = Optimizer.to_physical(root.left, tables_catalog)
+            right_phys = Optimizer.to_physical(root.right, tables_catalog)
+            return PhysicalHashJoin(
+                left_child=left_phys,
+                right_child=right_phys,
+                left_on=root.left_on,
+                right_on=root.right_on,
+                join_type=root.join_type
+            )
 
         elif isinstance(root, LogicalWithColumn):
             child_phys = Optimizer.to_physical(root.child, tables_catalog)
