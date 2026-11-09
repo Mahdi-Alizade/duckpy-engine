@@ -21,6 +21,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalLimit,
     LogicalWindow,
     LogicalJoin,
+    LogicalUnion,
 )
 from duckpy.optimizer.optimizer import Optimizer
 
@@ -91,9 +92,6 @@ class DataFrame:
         right_on: str,
         how: str = "inner"
     ) -> "DataFrame":
-        """
-        Performs an in-memory Hash Join with another DataFrame.
-        """
         how_normalized = how.strip().lower()
         if how_normalized == "inner":
             join_enum = JoinType.INNER
@@ -102,7 +100,6 @@ class DataFrame:
         else:
             raise ValueError(f"Unsupported join type: '{how}'. Supported types are 'inner' and 'left'.")
 
-        # Merge catalog dictionaries
         combined_catalog = dict(self._catalog)
         combined_catalog.update(other._catalog)
 
@@ -113,6 +110,26 @@ class DataFrame:
             right_on=right_on,
             join_type=join_enum
         )
+        return DataFrame(new_plan, combined_catalog)
+
+    def union_all(self, other: "DataFrame") -> "DataFrame":
+        """
+        Concatenates rows from this DataFrame and another DataFrame (without deduplication).
+        """
+        combined_catalog = dict(self._catalog)
+        combined_catalog.update(other._catalog)
+
+        new_plan = LogicalUnion(self._logical_plan, other.logical_plan, distinct=False)
+        return DataFrame(new_plan, combined_catalog)
+
+    def union(self, other: "DataFrame") -> "DataFrame":
+        """
+        Combines rows from this DataFrame and another DataFrame, removing duplicate rows.
+        """
+        combined_catalog = dict(self._catalog)
+        combined_catalog.update(other._catalog)
+
+        new_plan = LogicalUnion(self._logical_plan, other.logical_plan, distinct=True)
         return DataFrame(new_plan, combined_catalog)
 
     def aggregate(
