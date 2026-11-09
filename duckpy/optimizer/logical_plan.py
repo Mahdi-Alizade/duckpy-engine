@@ -11,6 +11,7 @@ from duckpy.execution.order_by import OrderByExpr
 from duckpy.execution.logical_filter import BooleanLogicOp, FilterCondition
 from duckpy.execution.window import WindowSpec
 from duckpy.execution.hash_join import JoinType
+from duckpy.execution.set_op import SetOpType
 from duckpy.types.dtypes import DuckType
 
 
@@ -329,3 +330,29 @@ class LogicalUnion(LogicalNode):
     def __repr__(self) -> str:
         union_kind = "UNION DISTINCT" if self.distinct else "UNION ALL"
         return f"LogicalUnion({union_kind})"
+
+
+class LogicalSetOperation(LogicalNode):
+    def __init__(
+        self,
+        left: LogicalNode,
+        right: LogicalNode,
+        op_type: SetOpType
+    ):
+        if left.schema.column_count != right.schema.column_count:
+            raise ValueError("LogicalSetOperation branches must have matching column counts.")
+        self.left = left
+        self.right = right
+        self.op_type = op_type
+        self._schema = left.schema
+
+    @property
+    def schema(self) -> Schema:
+        return self._schema
+
+    @property
+    def children(self) -> List[LogicalNode]:
+        return [self.left, self.right]
+
+    def __repr__(self) -> str:
+        return f"LogicalSetOperation({self.op_type.name})"
