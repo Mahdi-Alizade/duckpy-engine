@@ -6,6 +6,7 @@ from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
 from duckpy.execution.order_by import OrderByExpr, OrderDirection
 from duckpy.execution.logical_filter import BooleanLogicOp, FilterCondition
 from duckpy.execution.hash_join import JoinType
+from duckpy.execution.set_op import SetOpType
 from duckpy.optimizer.logical_plan import (
     LogicalNode,
     LogicalScan,
@@ -18,13 +19,14 @@ from duckpy.optimizer.logical_plan import (
     LogicalLimit,
     LogicalJoin,
     LogicalUnion,
+    LogicalSetOperation,
 )
 
 
 class SimpleSQLParser:
     """
     Lightweight SQL Parser that parses standard analytical queries
-    supporting UNION / UNION ALL, JOIN, compound WHERE predicates (AND/OR),
+    supporting UNION, INTERSECT, EXCEPT, JOIN, compound WHERE predicates (AND/OR),
     GROUP BY, HAVING, ORDER BY, and LIMIT.
     """
     def __init__(self, catalog_schemas: Dict[str, Schema]):
@@ -242,18 +244,32 @@ class SimpleSQLParser:
     def parse(self, sql_query: str) -> LogicalNode:
         cleaned_sql = sql_query.strip().rstrip(";")
 
-        # Check for UNION ALL
+        # 1. Check for UNION ALL
         union_all_parts = re.split(r"\s+UNION\s+ALL\s+", cleaned_sql, flags=re.IGNORECASE)
         if len(union_all_parts) == 2:
             left_node = self._parse_single_query(union_all_parts[0])
             right_node = self._parse_single_query(union_all_parts[1])
             return LogicalUnion(left_node, right_node, distinct=False)
 
-        # Check for UNION DISTINCT / UNION
+        # 2. Check for UNION DISTINCT / UNION
         union_distinct_parts = re.split(r"\s+UNION(?:\s+DISTINCT)?\s+", cleaned_sql, flags=re.IGNORECASE)
         if len(union_distinct_parts) == 2:
             left_node = self._parse_single_query(union_distinct_parts[0])
             right_node = self._parse_single_query(union_distinct_parts[1])
             return LogicalUnion(left_node, right_node, distinct=True)
+
+        # 3. Check for INTERSECT
+        intersect_parts = re.split(r"\s+INTERSECT\s+", cleaned_sql, flags=re.IGNORECASE)
+        if len(intersect_parts) == 2:
+            left_node = self._parse_single_query(intersect_parts[0])
+            right_node = self._parse_single_query(intersect_parts[1])
+            return LogicalSetOperation(left_node, right_node, SetOpType.INTERSECT)
+
+        # 4. Check for EXCEPT or MINUS
+        except_parts = re.split(r"\s+(?:EXCEPT|MINUS)\s+", cleaned_sql, flags=re.IGNORECASE)
+        if len(except_parts) == 2:
+            left_node = self._parse_single_query(except_parts[0])
+            right_node = self._parse_single_query(except_parts[1])
+            return LogicalSetOperation(left_node, right_node, SetOpType.EXCEPT)
 
         return self._parse_single_query(cleaned_sql)
