@@ -5,6 +5,7 @@ from duckpy.execution.filter import ComparisonOp
 from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
 from duckpy.execution.order_by import OrderByExpr, OrderDirection
 from duckpy.execution.logical_filter import BooleanLogicOp, FilterCondition
+from duckpy.execution.hash_join import JoinType
 from duckpy.optimizer.logical_plan import (
     LogicalNode,
     LogicalScan,
@@ -15,13 +16,14 @@ from duckpy.optimizer.logical_plan import (
     LogicalHaving,
     LogicalOrderBy,
     LogicalLimit,
+    LogicalJoin,
 )
 
 
 class SimpleSQLParser:
     """
     Lightweight SQL Parser that parses standard analytical queries
-    supporting compound WHERE predicates (AND/OR), SELECT, GROUP BY, HAVING, ORDER BY, and LIMIT.
+    supporting JOIN, compound WHERE predicates (AND/OR), GROUP BY, HAVING, ORDER BY, and LIMIT.
     """
     def __init__(self, catalog_schemas: Dict[str, Schema]):
         self._schemas = dict(catalog_schemas)
@@ -60,12 +62,13 @@ class SimpleSQLParser:
             return val
 
     def _parse_single_condition(self, condition_str: str) -> FilterCondition:
-        pattern = re.compile(r"([a-zA-Z0-9_\(\)]+)\s*(=|!=|<>|>=|<=|>|<)\s*(.+)")
+        pattern = re.compile(r"([a-zA-Z0-9_\(\)\.]+)\s*(=|!=|<>|>=|<=|>|<)\s*(.+)")
         match = pattern.match(condition_str.strip())
         if not match:
             raise ValueError(f"Invalid predicate format: '{condition_str}'")
 
-        col_name = match.group(1).strip()
+        raw_col = match.group(1).strip()
+        col_name = raw_col.split(".")[-1]
         raw_op = match.group(2).strip()
         raw_val = match.group(3).strip()
 
@@ -76,9 +79,10 @@ class SimpleSQLParser:
     def parse(self, sql_query: str) -> LogicalNode:
         cleaned_sql = sql_query.strip().rstrip(";")
         
-        # Regex to capture SELECT, FROM, WHERE, GROUP BY, HAVING, ORDER BY, LIMIT
+        # Regex to capture SELECT, FROM, optional JOIN, optional WHERE, GROUP BY, HAVING, ORDER BY, LIMIT
         pattern = re.compile(
             r"SELECT\s+(?P<select>.+?)\s+FROM\s+(?P<from>[a-zA-Z0-9_]+)"
+            r"(?:\s+(?P<join_type>INNER|LEFT)\s+JOIN\s+(?P<join_table>[a-zA-Z0-9_]+)\s+ON\s+(?P<join_on>.+?))?"
             r"(?:\s+WHERE\s+(?P<where>.+?))?"
             r"(?:\s+GROUP\s+BY\s+(?P<group_by>.+?))?"
             r"(?:\s+HAVING\s+(?P<having>.+?))?"
@@ -99,7 +103,37 @@ class SimpleSQLParser:
         schema = self._schemas[table_name]
         current_node: LogicalNode = LogicalScan(table_name, schema)
 
-        # 1. Process WHERE clause
+        # 1. Process JOIN clause
+        join_table_name = match.group("join_table")
+        if join_table_name:
+            join_table_clean = join_table_name.strip()
+            if join_table_clean not in self._schemas:
+                raise KeyError(f"Joined table '{join_table_clean}' does not exist in catalog.")
+
+            right_schema = self._schemas[join_table_clean]
+            right_node = LogicalScan(join_table_clean, right_schema)
+
+            raw_join_type = match.group("join_type").upper()
+            join_enum = JoinType.LEFT if raw_join_type == "LEFT" else JoinType.INNER
+
+            join_on_clause = match.group("join_on").strip()
+            on_pattern = re.compile(r"([a-zA-Z0-9_\.]+)\s*=\s*([a-zA-Z0-9_\.]+)")
+            on_match = on_pattern.match(join_on_clause)
+            if not on_match:
+                raise ValueError(f"Unsupported JOIN ON predicate: '{join_on_clause}'")
+
+            left_key = on_match.group(1).strip().split(".")[-1]
+            right_key = on_match.group(2).strip().split(".")[-1]
+
+            current_node = LogicalJoin(
+                left=current_node,
+                right=right_node,
+                left_on=left_key,
+                right_on=right_key,
+                join_type=join_enum
+            )
+
+        # 2. Process WHERE clause
         where_clause = match.group("where")
         if where_clause:
             where_raw = where_clause.strip()
@@ -133,7 +167,7 @@ class SimpleSQLParser:
                     target_value=single_cond.target_value
                 )
 
-        # 2. Process SELECT & GROUP BY
+        # 3. Process SELECT & GROUP BY
         select_clause = match.group("select").strip()
         group_by_clause = match.group("group_by")
         raw_select_items = [item.strip() for item in select_clause.split(",")]
@@ -149,24 +183,26 @@ class SimpleSQLParser:
             if agg_match:
                 has_aggregation = True
                 fn_name = agg_match.group(1).upper()
-                target_col = agg_match.group(2).strip()
+                raw_target_col = agg_match.group(2).strip()
+                target_col = raw_target_col.split(".")[-1]
                 custom_alias = agg_match.group(3)
 
                 func_enum = AggregateFunction[fn_name]
                 alias = custom_alias if custom_alias else f"{fn_name.lower()}({target_col})"
                 aggregates.append(AggregateExpr(func_enum, target_col, alias=alias))
             else:
-                project_columns.append(item)
+                cleaned_item = item.split(".")[-1]
+                project_columns.append(cleaned_item)
 
         if has_aggregation:
-            group_by_cols = [c.strip() for c in group_by_clause.split(",")] if group_by_clause else project_columns
+            group_by_cols = [c.strip().split(".")[-1] for c in group_by_clause.split(",")] if group_by_clause else project_columns
             current_node = LogicalAggregate(
                 child=current_node,
                 group_by_columns=group_by_cols,
                 aggregates=aggregates
             )
 
-            # 3. Process HAVING clause
+            # 4. Process HAVING clause
             having_clause = match.group("having")
             if having_clause:
                 cond = self._parse_single_condition(having_clause.strip())
@@ -183,18 +219,18 @@ class SimpleSQLParser:
                     select_columns=project_columns
                 )
 
-        # 4. Process ORDER BY clause
+        # 5. Process ORDER BY clause
         order_by_clause = match.group("order_by")
         if order_by_clause:
             order_specs = []
             for spec in order_by_clause.split(","):
                 parts = spec.strip().split()
-                col = parts[0]
+                col = parts[0].split(".")[-1]
                 direction = OrderDirection.DESCENDING if (len(parts) > 1 and parts[1].upper() == "DESC") else OrderDirection.ASCENDING
                 order_specs.append(OrderByExpr(col, direction))
             current_node = LogicalOrderBy(current_node, order_specs)
 
-        # 5. Process LIMIT clause
+        # 6. Process LIMIT clause
         limit_clause = match.group("limit")
         if limit_clause:
             limit_val = int(limit_clause.strip())
