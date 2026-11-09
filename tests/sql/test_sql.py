@@ -160,3 +160,37 @@ def test_sql_inner_join_execution():
 
     assert len(records) == 1
     assert records[0] == {"username": "Alice", "dept_title": "Engineering"}
+
+
+def test_sql_union_and_union_all():
+    ctx = DuckPyContext()
+
+    branch_a_data = [
+        [101, "Server_A"],
+        [102, "Server_B"],
+    ]
+    branch_b_data = [
+        [102, "Server_B"],  # Duplicate row
+        [103, "Server_C"],
+    ]
+    node_cols = [
+        ("node_id", DuckType.INT64),
+        ("node_name", DuckType.STRING),
+    ]
+
+    ctx.create_table_from_rows("cluster_a", node_cols, branch_a_data, chunk_size=2)
+    ctx.create_table_from_rows("cluster_b", node_cols, branch_b_data, chunk_size=2)
+
+    # 1. UNION ALL
+    query_all = "SELECT node_id, node_name FROM cluster_a UNION ALL SELECT node_id, node_name FROM cluster_b;"
+    res_all = ctx.sql(query_all).to_dict()
+    assert len(res_all) == 4
+
+    # 2. UNION DISTINCT
+    query_distinct = "SELECT node_id, node_name FROM cluster_a UNION SELECT node_id, node_name FROM cluster_b;"
+    res_distinct = ctx.sql(query_distinct).to_dict()
+    assert len(res_distinct) == 3
+    node_names = [r["node_name"] for r in res_distinct]
+    assert "Server_A" in node_names
+    assert "Server_B" in node_names
+    assert "Server_C" in node_names
