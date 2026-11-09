@@ -16,6 +16,7 @@ from duckpy.execution.having import PhysicalHaving
 from duckpy.execution.window import PhysicalWindow, WindowSpec, WindowFunctionType
 from duckpy.execution.hash_join import PhysicalHashJoin, JoinType
 from duckpy.execution.union import PhysicalUnion
+from duckpy.execution.set_op import PhysicalSetOperation, SetOpType
 from duckpy.execution.expressions import (
     Expression,
     ColumnRefExpr,
@@ -49,6 +50,8 @@ __all__ = [
     "PhysicalHashJoin",
     "JoinType",
     "PhysicalUnion",
+    "PhysicalSetOperation",
+    "SetOpType",
     "Expression",
     "ColumnRefExpr",
     "LiteralExpr",
