@@ -10,6 +10,7 @@ from duckpy.execution.aggregate import AggregateExpr, AggregateFunction
 from duckpy.execution.expressions import Expression
 from duckpy.execution.order_by import OrderByExpr, OrderDirection
 from duckpy.execution.window import WindowSpec, WindowFunctionType
+from duckpy.execution.hash_join import JoinType
 from duckpy.optimizer.logical_plan import (
     LogicalNode,
     LogicalFilter,
@@ -19,6 +20,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalOrderBy,
     LogicalLimit,
     LogicalWindow,
+    LogicalJoin,
 )
 from duckpy.optimizer.optimizer import Optimizer
 
@@ -35,6 +37,10 @@ class DataFrame:
     @property
     def schema(self) -> Schema:
         return self._logical_plan.schema
+
+    @property
+    def logical_plan(self) -> LogicalNode:
+        return self._logical_plan
 
     def filter(self, column: str, op: ComparisonOp, value: Any) -> "DataFrame":
         new_plan = LogicalFilter(self._logical_plan, column, op, value)
@@ -74,12 +80,40 @@ class DataFrame:
         order_by: Sequence[str],
         alias: str
     ) -> "DataFrame":
-        """
-        Computes analytical window function (ROW_NUMBER / RANK) over specified partitions.
-        """
         spec = WindowSpec(func_type, list(partition_by), list(order_by), alias)
         new_plan = LogicalWindow(self._logical_plan, spec)
         return DataFrame(new_plan, self._catalog)
+
+    def join(
+        self,
+        other: "DataFrame",
+        left_on: str,
+        right_on: str,
+        how: str = "inner"
+    ) -> "DataFrame":
+        """
+        Performs an in-memory Hash Join with another DataFrame.
+        """
+        how_normalized = how.strip().lower()
+        if how_normalized == "inner":
+            join_enum = JoinType.INNER
+        elif how_normalized == "left":
+            join_enum = JoinType.LEFT
+        else:
+            raise ValueError(f"Unsupported join type: '{how}'. Supported types are 'inner' and 'left'.")
+
+        # Merge catalog dictionaries
+        combined_catalog = dict(self._catalog)
+        combined_catalog.update(other._catalog)
+
+        new_plan = LogicalJoin(
+            left=self._logical_plan,
+            right=other.logical_plan,
+            left_on=left_on,
+            right_on=right_on,
+            join_type=join_enum
+        )
+        return DataFrame(new_plan, combined_catalog)
 
     def aggregate(
         self,
