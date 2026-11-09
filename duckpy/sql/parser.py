@@ -17,13 +17,15 @@ from duckpy.optimizer.logical_plan import (
     LogicalOrderBy,
     LogicalLimit,
     LogicalJoin,
+    LogicalUnion,
 )
 
 
 class SimpleSQLParser:
     """
     Lightweight SQL Parser that parses standard analytical queries
-    supporting JOIN, compound WHERE predicates (AND/OR), GROUP BY, HAVING, ORDER BY, and LIMIT.
+    supporting UNION / UNION ALL, JOIN, compound WHERE predicates (AND/OR),
+    GROUP BY, HAVING, ORDER BY, and LIMIT.
     """
     def __init__(self, catalog_schemas: Dict[str, Schema]):
         self._schemas = dict(catalog_schemas)
@@ -76,10 +78,9 @@ class SimpleSQLParser:
         val = self._cast_literal(raw_val)
         return FilterCondition(col_name, op, val)
 
-    def parse(self, sql_query: str) -> LogicalNode:
+    def _parse_single_query(self, sql_query: str) -> LogicalNode:
         cleaned_sql = sql_query.strip().rstrip(";")
         
-        # Regex to capture SELECT, FROM, optional JOIN, optional WHERE, GROUP BY, HAVING, ORDER BY, LIMIT
         pattern = re.compile(
             r"SELECT\s+(?P<select>.+?)\s+FROM\s+(?P<from>[a-zA-Z0-9_]+)"
             r"(?:\s+(?P<join_type>INNER|LEFT)\s+JOIN\s+(?P<join_table>[a-zA-Z0-9_]+)\s+ON\s+(?P<join_on>.+?))?"
@@ -237,3 +238,22 @@ class SimpleSQLParser:
             current_node = LogicalLimit(current_node, limit_val)
 
         return current_node
+
+    def parse(self, sql_query: str) -> LogicalNode:
+        cleaned_sql = sql_query.strip().rstrip(";")
+
+        # Check for UNION ALL
+        union_all_parts = re.split(r"\s+UNION\s+ALL\s+", cleaned_sql, flags=re.IGNORECASE)
+        if len(union_all_parts) == 2:
+            left_node = self._parse_single_query(union_all_parts[0])
+            right_node = self._parse_single_query(union_all_parts[1])
+            return LogicalUnion(left_node, right_node, distinct=False)
+
+        # Check for UNION DISTINCT / UNION
+        union_distinct_parts = re.split(r"\s+UNION(?:\s+DISTINCT)?\s+", cleaned_sql, flags=re.IGNORECASE)
+        if len(union_distinct_parts) == 2:
+            left_node = self._parse_single_query(union_distinct_parts[0])
+            right_node = self._parse_single_query(union_distinct_parts[1])
+            return LogicalUnion(left_node, right_node, distinct=True)
+
+        return self._parse_single_query(cleaned_sql)
