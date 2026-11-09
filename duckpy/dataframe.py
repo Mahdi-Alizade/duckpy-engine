@@ -11,6 +11,7 @@ from duckpy.execution.expressions import Expression
 from duckpy.execution.order_by import OrderByExpr, OrderDirection
 from duckpy.execution.window import WindowSpec, WindowFunctionType
 from duckpy.execution.hash_join import JoinType
+from duckpy.execution.set_op import SetOpType
 from duckpy.optimizer.logical_plan import (
     LogicalNode,
     LogicalFilter,
@@ -22,6 +23,7 @@ from duckpy.optimizer.logical_plan import (
     LogicalWindow,
     LogicalJoin,
     LogicalUnion,
+    LogicalSetOperation,
 )
 from duckpy.optimizer.optimizer import Optimizer
 
@@ -113,9 +115,6 @@ class DataFrame:
         return DataFrame(new_plan, combined_catalog)
 
     def union_all(self, other: "DataFrame") -> "DataFrame":
-        """
-        Concatenates rows from this DataFrame and another DataFrame (without deduplication).
-        """
         combined_catalog = dict(self._catalog)
         combined_catalog.update(other._catalog)
 
@@ -123,13 +122,30 @@ class DataFrame:
         return DataFrame(new_plan, combined_catalog)
 
     def union(self, other: "DataFrame") -> "DataFrame":
-        """
-        Combines rows from this DataFrame and another DataFrame, removing duplicate rows.
-        """
         combined_catalog = dict(self._catalog)
         combined_catalog.update(other._catalog)
 
         new_plan = LogicalUnion(self._logical_plan, other.logical_plan, distinct=True)
+        return DataFrame(new_plan, combined_catalog)
+
+    def intersect(self, other: "DataFrame") -> "DataFrame":
+        """
+        Returns distinct common rows present in both this and another DataFrame.
+        """
+        combined_catalog = dict(self._catalog)
+        combined_catalog.update(other._catalog)
+
+        new_plan = LogicalSetOperation(self._logical_plan, other.logical_plan, SetOpType.INTERSECT)
+        return DataFrame(new_plan, combined_catalog)
+
+    def except_(self, other: "DataFrame") -> "DataFrame":
+        """
+        Returns distinct rows present in this DataFrame but absent in another DataFrame.
+        """
+        combined_catalog = dict(self._catalog)
+        combined_catalog.update(other._catalog)
+
+        new_plan = LogicalSetOperation(self._logical_plan, other.logical_plan, SetOpType.EXCEPT)
         return DataFrame(new_plan, combined_catalog)
 
     def aggregate(
