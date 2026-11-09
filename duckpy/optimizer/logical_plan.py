@@ -10,6 +10,7 @@ from duckpy.execution.expressions import Expression
 from duckpy.execution.order_by import OrderByExpr
 from duckpy.execution.logical_filter import BooleanLogicOp, FilterCondition
 from duckpy.execution.window import WindowSpec
+from duckpy.execution.hash_join import JoinType
 from duckpy.types.dtypes import DuckType
 
 
@@ -259,3 +260,46 @@ class LogicalWindow(LogicalNode):
 
     def __repr__(self) -> str:
         return f"LogicalWindow({self.window_spec.func_type.name} AS {self.window_spec.alias})"
+
+
+class LogicalJoin(LogicalNode):
+    def __init__(
+        self,
+        left: LogicalNode,
+        right: LogicalNode,
+        left_on: str,
+        right_on: str,
+        join_type: JoinType = JoinType.INNER
+    ):
+        self.left = left
+        self.right = right
+        self.left_on = left_on
+        self.right_on = right_on
+        self.join_type = join_type
+
+        # Build combined schema
+        merged_cols: List[ColumnDefinition] = []
+        left_col_names = set()
+
+        for col in self.left.schema.columns:
+            merged_cols.append(col)
+            left_col_names.add(col.name)
+
+        for col in self.right.schema.columns:
+            final_name = col.name
+            if final_name in left_col_names:
+                final_name = f"right_{col.name}"
+            merged_cols.append(ColumnDefinition(final_name, col.dtype))
+
+        self._schema = Schema(merged_cols)
+
+    @property
+    def schema(self) -> Schema:
+        return self._schema
+
+    @property
+    def children(self) -> List[LogicalNode]:
+        return [self.left, self.right]
+
+    def __repr__(self) -> str:
+        return f"LogicalJoin({self.join_type.name} on left.{self.left_on} = right.{self.right_on})"
