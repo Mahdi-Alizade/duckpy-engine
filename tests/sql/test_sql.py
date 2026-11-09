@@ -115,7 +115,6 @@ def test_sql_having_filter():
     ]
     ctx.create_table_from_rows("org", cols, data, chunk_size=2)
 
-    # Filter out departments with average salary <= 80000
     query = "SELECT dept, AVG(salary) AS avg_sal FROM org GROUP BY dept HAVING avg_sal > 80000.0;"
     df = ctx.sql(query)
     records = df.to_dict()
@@ -123,3 +122,41 @@ def test_sql_having_filter():
     assert len(records) == 1
     assert records[0]["dept"] == "Tech"
     assert records[0]["avg_sal"] == 120000.0
+
+
+def test_sql_inner_join_execution():
+    ctx = DuckPyContext()
+
+    users_data = [
+        [1, "Alice", 10],
+        [2, "Bob", 20],
+        [3, "Charlie", 30],
+    ]
+    users_cols = [
+        ("id", DuckType.INT64),
+        ("username", DuckType.STRING),
+        ("dept_id", DuckType.INT64),
+    ]
+    ctx.create_table_from_rows("accounts", users_cols, users_data, chunk_size=2)
+
+    depts_data = [
+        [10, "Engineering"],
+        [20, "Product"],
+    ]
+    depts_cols = [
+        ("dept_id", DuckType.INT64),
+        ("dept_title", DuckType.STRING),
+    ]
+    ctx.create_table_from_rows("departments", depts_cols, depts_data, chunk_size=2)
+
+    query = (
+        "SELECT username, dept_title "
+        "FROM accounts "
+        "INNER JOIN departments ON accounts.dept_id = departments.dept_id "
+        "WHERE dept_id = 10;"
+    )
+    df = ctx.sql(query)
+    records = df.to_dict()
+
+    assert len(records) == 1
+    assert records[0] == {"username": "Alice", "dept_title": "Engineering"}
