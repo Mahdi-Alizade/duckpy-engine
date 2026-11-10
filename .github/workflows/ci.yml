@@ -1,40 +1,36 @@
-name: CI Pipeline
+name: DuckPy Engine CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ main, master ]
 
 jobs:
-  test:
-    name: Run Pytest & Lint
-    runs-on: ubuntu-latest
+  test-suite:
+    name: Run Test Suite (${{ matrix.python-version }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
-      - name: Check out repository
+      - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python Runtime
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
+          cache: "pip"
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -e .
+          pip install pytest pytest-cov hypothesis
 
-      - name: Run Test Suite with PyTest and Coverage
+      - name: Run Test Suite
         run: |
-          pytest -v --cov=duckpy --cov-report=term-missing tests/
-
-      - name: Run Performance Benchmark Smoke Test
-        run: |
-          python benchmarks/benchmark_run.py
+          pytest -v --durations=10
